@@ -8,7 +8,7 @@ from nltk.tokenize import word_tokenize
 from collections import Counter
 
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
+from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances, manhattan_distances
 from sklearn.metrics import jaccard_score
 
 
@@ -24,6 +24,7 @@ class EKG_rule:
         self.tfidf_matrix = None
         self.index_list = None
         self.comment4 = None
+        self.idx_max = None
 
     def Data_Load(self, filename, data_only=True):
         load_wb = load_workbook(filename, data_only)
@@ -34,31 +35,35 @@ class EKG_rule:
         data = data[1:]
         data.rename(columns=header, inplace=True)
         data.reset_index(drop=True, inplace=True)
+        self.idx_max = len(data)
 
         self.Rule = data[['source_name', 'condition_concept_id', 'concept_name']]
 
-        comma = self.Rule['source_name'].str.replace(pat=',', repl='', regex=False)
+        star = self.Rule['source_name'].str.replace(pat='*', repl='', regex=False)
+        Newline = star.str.replace(pat='{New Line}', repl=' ', regex=False)
 
-        self.X = comma.str.replace(pat='-', repl=' ', regex=False)
-        X2 = comma.str.replace(pat='-', repl='', regex=False)
+        self.X = Newline.str.replace(pat='-', repl=' ', regex=False)
+        X2 = Newline.str.replace(pat='-', repl='', regex=False)
         self.X = self.X.append(X2, ignore_index=False)
         self.X = self.X.str.lower()
         self.X.drop_duplicates(inplace=True)
 
-        #self.X = self.X.str.replace(pat=',', repl='', regex=False)
+        # self.X = self.X.str.replace(pat=',', repl='', regex=False)
         self.y = self.Rule[['condition_concept_id', 'concept_name']]
 
         self.index_list = self.X.index.tolist()
 
         # self.tfidf = TfidfVectorizer()
-        self.tfidf = CountVectorizer(stop_words=['***', ','], tokenizer=word_tokenize)
+        #self.tfidf = CountVectorizer(stop_words=['consider', 'probable', 'probably', 'possible', 'suggests', 'prob'], tokenizer=word_tokenize)
+        self.tfidf = CountVectorizer(stop_words=['consider', 'probable', 'probably', 'possible', 'suggests', 'prob'])
+
 
         self.tfidf_matrix = self.tfidf.fit_transform(self.X)
-        #print(self.tfidf_matrix.shape)
+        # print(self.tfidf_matrix.shape)
 
-        self.should_not_use = list(comma[data['should_not_use'] == 2].str.lower())
-        self.comment3 = list(comma[data['comment'] == 3].str.lower())
-        self.comment4 = list(comma[data['comment'] == 4].str.lower())
+        self.should_not_use = list(Newline[data['should_not_use'] == 2].str.lower())
+        self.comment3 = list(Newline[data['comment'] == 3].str.lower())
+        self.comment4 = list(Newline[data['comment'] == 4].str.lower())
 
 
     def additional_Data_Load(self, filename, data_only=True):
@@ -69,15 +74,17 @@ class EKG_rule:
         header = data.iloc[0]
         data = data[1:]
         data.rename(columns=header, inplace=True)
-        a_len = len(self.X)
-        data.index= range(a_len, a_len+len(data))
+        a_len = self.idx_max
+        self.idx_max = a_len + len(data)
+        data.index = range(a_len, a_len+len(data))
 
         Rule = data[['source_name', 'condition_concept_id', 'concept_name']]
 
-        comma = Rule['source_name'].str.replace(pat=',', repl='', regex=False)
+        star = Rule['source_name'].str.replace(pat='*', repl='', regex=False)
+        Newline = star.str.replace(pat='{New Line}', repl=' ', regex=False)
 
-        X = comma.str.replace(pat='-', repl=' ', regex=False)
-        X2 = comma.str.replace(pat='-', repl='', regex=False)
+        X = Newline.str.replace(pat='-', repl=' ', regex=False)
+        X2 = Newline.str.replace(pat='-', repl='', regex=False)
         X = X.append(X2, ignore_index=False)
         X = X.str.lower()
         X.drop_duplicates(inplace=True)
@@ -90,13 +97,13 @@ class EKG_rule:
 
         self.index_list = self.X.index.tolist()
 
-        self.tfidf = CountVectorizer(stop_words=['***', ','], tokenizer=word_tokenize)
+        #self.tfidf = CountVectorizer(stop_words=['consider', 'probable', 'probably', 'possible', 'suggests', 'prob'], tokenizer=word_tokenize)
 
         self.tfidf_matrix = self.tfidf.fit_transform(self.X)
 
-        self.should_not_use.append(list(comma[data['should_not_use'] == 2].str.lower()))
-        self.comment3.append(list(comma[data['comment'] == 3].str.lower()))
-        self.comment4.append(list(comma[data['comment'] == 4].str.lower()))
+        if (data['should_not_use']==2).any(): self.should_not_use.append(list(Newline[data['should_not_use'] == 2].str.lower()))
+        if (data['comment'] == 3).any(): self.comment3.append(list(Newline[data['comment'] == 3].str.lower()))
+        if (data['comment'] == 4).any(): self.comment4.append(list(Newline[data['comment'] == 4].str.lower()))
 
     def OrderedSet(self, list):
         my_set = set()
@@ -113,14 +120,16 @@ class EKG_rule:
         concept_name = []
         #mapping_text = []
         for input_ in statement:
-            input_ = re.sub(r'-', '', input_)
+            input_ = re.sub('[-]', ' ', input_)
+            input_ = re.sub('[*]', '', input_)
+            input_ = re.sub('{New Line}', ' ', input_)
             input_ = self.tfidf.transform([input_.lower()])
-            cosine_sim = cosine_similarity(self.tfidf_matrix, input_)
-            sim_scores = list(enumerate(cosine_sim))
-            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-            sim_scores = sim_scores[0]
-            true_id = np.array(self.y[['condition_concept_id']].loc[self.index_list[sim_scores[0]]].dropna())
-            true_name = np.array(self.y[['concept_name']].loc[self.index_list[sim_scores[0]]].dropna())
+            cosine_sim = cosine_similarity(input_, self.tfidf_matrix)
+            i = cosine_sim[0].argmax()
+            sim_scores = cosine_sim[0][i]
+
+            true_id = np.array(self.y[['condition_concept_id']].loc[self.index_list[i]].dropna())
+            true_name = np.array(self.y[['concept_name']].loc[self.index_list[i]].dropna())
             #true_X = np.array(self.X.iloc[sim_scores[0]])
             concept_id.append(true_id)
             concept_name.append(true_name)
@@ -131,132 +140,24 @@ class EKG_rule:
         if statement == None: statement = list(self.X)
         concept_id = []
         concept_name = []
-        high = 0
-        low = 1
-        avg = 0
-        num = 0
         #mapping_text = []
         for input_ in statement:
-            num = num + 1
-            input_ = re.sub(r'-', '', input_)
+            input_ = re.sub('[-]', ' ', input_)
+            input_ = re.sub('[*]', '', input_)
+            input_ = re.sub('{New Line}', ' ', input_)
             input_ = self.tfidf.transform([input_.lower()])
-            cosine_sim = cosine_similarity(self.tfidf_matrix, input_)
-            sim_scores = list(enumerate(cosine_sim))
-            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-            sim_scores = sim_scores[0]
-            if high < sim_scores[1][0]:
-                high = sim_scores[1][0]
-            if low > sim_scores[1][0]:
-                low = sim_scores[1][0]
-            avg = avg + sim_scores[1][0]
-            true_id = np.array(self.y[['condition_concept_id']].loc[self.index_list[sim_scores[0]]].dropna())
-            #true_name = np.array(self.y[['concept_name']].loc[self.index_list[sim_scores[0]]].dropna())
-            #true_X = np.array(self.X.iloc[sim_scores[0]])
-            concept_id.append(true_id)
-            #concept_name.append(true_name)
-            #mapping_text.append(true_X)
-        avg = avg / num
-        return high, low, avg, concept_id #, mapping_text
+            cosine_sim = cosine_similarity(input_, self.tfidf_matrix)
+            i = cosine_sim[0].argmax()
+            sim_scores = cosine_sim[0][i]
 
-    def Get_similar_simscore_(self, statement=None):
-        if statement == None: statement = list(self.X)
-        concept_id = []
-        concept_name = []
-        high = 0
-        low = 1
-        avg = 0
-        num = 0
-        #mapping_text = []
-        for input_ in statement:
-            num = num + 1
-            input_ = re.sub(r'-', '', input_)
-            input_ = self.tfidf.transform([input_.lower()])
-            cosine_sim = cosine_similarity(self.tfidf_matrix, input_)
-            sim_scores = list(enumerate(cosine_sim))
-            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-            sim_scores = sim_scores[0]
-            if high < sim_scores[1][0]:
-                high = sim_scores[1][0]
-            if low > sim_scores[1][0]:
-                low = sim_scores[1][0]
-            avg = avg + sim_scores[1][0]
-            true_id = np.array(self.y[['condition_concept_id']].loc[self.index_list[sim_scores[0]]].dropna())
-            true_name = np.array(self.y[['concept_name']].loc[self.index_list[sim_scores[0]]].dropna())
-            #true_X = np.array(self.X.iloc[sim_scores[0]])
+            true_id = np.array(self.y[['condition_concept_id']].loc[self.index_list[i]].dropna())
+            true_name = np.array(self.y[['concept_name']].loc[self.index_list[i]].dropna())
+            #true_X = np.array(self.X.iloc[i])
             concept_id.append(true_id)
             concept_name.append(true_name)
             #mapping_text.append(true_X)
-        avg = avg / num
-        return high, low, avg, concept_id, concept_name
+        return concept_id, concept_name, sim_scores
 
-    def Get_similar_euclid(self, statement=None):
-        if statement == None: statement = list(self.X)
-        concept_id = []
-        concept_name = []
-        #mapping_text = []
-        for input_ in statement:
-            input_ = re.sub(r'-', '', input_)
-            input_ = self.tfidf.transform([input_.lower()])
-            euclid_sim = euclidean_distances(self.tfidf_matrix, input_)
-            sim_scores = list(enumerate(euclid_sim))
-            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=False)  # low is good
-            sim_scores = sim_scores[0]
-            true_id = np.array(self.y[['condition_concept_id']].loc[self.index_list[sim_scores[0]]].dropna())
-            true_name = np.array(self.y[['concept_name']].loc[self.index_list[sim_scores[0]]].dropna())
-            #true_X = np.array(self.X.iloc[sim_scores[0]])
-            concept_id.append(true_id)
-            concept_name.append(true_name)
-            #mapping_text.append(true_X)
-        return concept_id, concept_name#, mapping_text
-
-    def jaccard_best(self, tfidf, input):
-        """
-        jac = 1
-        num = 0
-        tfidf = tfidf.toarray()
-        input = input.toarray()
-        for i in range(tfidf.shape[0]):
-            #aa = jaccard_score(input[0], tfidf[i], average='macro')
-            #k.append(aa)
-            aa = jaccard_score(input[0], tfidf[i])
-            if jac >= aa:
-                jac = aa
-                num = i
-
-            inter = len(list(set(input[0]).intersection(tfidf[i])))
-            union = (len(input[0])+len(tfidf[i]))-inter
-            if jac >= float(inter)/union:
-                jac = float(inter)/union
-                num = i
-
-        return num
-        """
-
-        inter = np.dot(tfidf, input.T)
-        sums = tfidf.toarray().sum(axis=1, keepdims=True) + input.T.toarray().sum(axis=0, keepdims=True)
-        unions = sums-inter
-        return inter/unions
-
-
-    def Get_similar_jaccard(self, statement=None):
-        if statement == None: statement = list(self.X)
-        concept_id = []
-        concept_name = []
-        #mapping_text = []
-        for input_ in statement:
-            input_ = re.sub(r'-', '', input_)
-            input_ = self.tfidf.transform([input_.lower()])
-            jaccard_sim = self.jaccard_best(self.tfidf_matrix, input_)
-            sim_scores = list(enumerate(jaccard_sim))
-            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)  # low is good
-            sim_scores = sim_scores[0]
-            true_id = np.array(self.y[['condition_concept_id']].loc[self.index_list[sim_scores[0]]].dropna())
-            true_name = np.array(self.y[['concept_name']].loc[self.index_list[sim_scores[0]]].dropna())
-            #true_X = np.array(self.X.iloc[sim_scores[0]])
-            concept_id.append(true_id)
-            concept_name.append(true_name)
-            #mapping_text.append(true_X)
-        return concept_id, concept_name#, mapping_text
 
     def my_split(self, text, delimiter):
         token = []
@@ -273,15 +174,18 @@ class EKG_rule:
         #mapping_text = []
 
         for input_ in statement:
-            input_ = re.sub(r'-', '', input_).lower()
-            input_ = re.sub(r',', '', input_)
+            input_ = re.sub('[-]', ' ', input_).lower()
+            #input_ = re.sub(r',', '', input_)
+            input_ = re.sub('[*]', '', input_)
+            input_ = re.sub('{New Line}', '', input_)
+            input_ = input_.lower()
             out = False
             cont = False
 
             for tag2 in self.should_not_use:
-                if tag2 in input_:
+                if tag2.strip() in input_:
                     for tag3 in self.comment3:
-                        if tag3 in input_:
+                        if tag3.strip() in input_:
                             cont = True
                     if cont:
                         break
@@ -293,20 +197,6 @@ class EKG_rule:
             if out:
                 continue    # should not use 먼저 검사
 
-            p = 0
-            for all in self.X:
-                if input_ == all:
-                    allmatch_id = np.array(self.y[['condition_concept_id']].loc[self.index_list[p]].dropna())
-                    allmatch_name = np.array(self.y[['concept_name']].loc[self.index_list[p]].dropna())
-                    concept_id.append(allmatch_id)
-                    concept_name.append(allmatch_name)
-                    #mapping_text.append(all)
-                    out = True
-                    break
-                p = p + 1
-            if out:
-                continue  # 전문 일치 검색
-
             ind = []
             p = 0
             #for not_tag2 in self.if_any_match:
@@ -314,7 +204,7 @@ class EKG_rule:
                 if not_tag4 in input_:
                     add = True
                     for com4 in self.comment4:
-                        if com4 in input_:
+                        if com4 == not_tag4:
                             add = False
                     if add:
                         ind.append(self.index_list[p])
@@ -336,10 +226,3 @@ class EKG_rule:
             concept_name.append(self.OrderedSet(n2))
             #mapping_text.append(input_)
         return concept_id, concept_name#, mapping_text
-
-            
-            
-            
-
-            
-
