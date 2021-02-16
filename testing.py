@@ -7,7 +7,7 @@ from collections import Counter
 from ast import literal_eval
 import time
 
-from EKG_EKG2CDM import EKG_rule
+from ECG2CDM import EKG_rule
 from openpyxl import load_workbook
 
 start = time.time()
