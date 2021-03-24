@@ -5,7 +5,7 @@ This is a code of making PyQT Program for mapping EKG Diagnostic data to CDM con
 The currently acquired interpretation ontology data was extracted from GE Healthcare, Philips, and Nihon Kohden.
 
 
-###The software can be found in http://cdal.korea.ac.kr/ECG2CDM/   
+### The software can be found in http://cdal.korea.ac.kr/ECG2CDM/   
 **ECG2CDM** is the name of the executable program.
 
 
